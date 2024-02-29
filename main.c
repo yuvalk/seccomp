@@ -9,7 +9,14 @@
 #include <sys/prctl.h>
 #include <unistd.h>
 
+#include "common.h"
+
+static int seccomp(unsigned int operation, unsigned int flags, void *args) {
+	return syscall(__NR_seccomp, operation, flags, args);
+}
+
 static int install_filter(int nr, int arch, int error) {
+	int fd;
   struct sock_filter filter[] = {
       BPF_STMT(BPF_LD + BPF_W + BPF_ABS, (offsetof(struct seccomp_data, arch))),
       BPF_JUMP(BPF_JMP + BPF_JEQ + BPF_K, arch, 0, 3),
@@ -22,23 +29,27 @@ static int install_filter(int nr, int arch, int error) {
       .len = (unsigned short)(sizeof(filter) / sizeof(filter[0])),
       .filter = filter,
   };
-  if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0)) {
-    perror("prctl(NO_NEW_PRIVS)");
-    return 1;
+
+  if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0) {
+	  die ("  prctl");
   }
-  if (prctl(PR_SET_SECCOMP, 2, &prog)) {
-    perror("prctl(PR_SET_SECCOMP)");
-    return 1;
+
+  if ((fd = seccomp(
+	SECCOMP_SET_MODE_FILTER, 
+	SECCOMP_FILTER_FLAG_NEW_LISTENER, 
+	&prog)) < 0) {
+	  die("  seccomp");
   }
-  return 0;
+
+  return fd;
 }
 
 int main() {
   printf("hey there!\n");
+  printf("something's gonna happen!!\n");
 
   install_filter(__NR_write, AUDIT_ARCH_X86_64, EPERM);
 
-  printf("something's gonna happen!!\n");
   printf("it will not definitely print this here\n");
   return 0;
 }
